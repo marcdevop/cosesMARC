@@ -1,0 +1,351 @@
+			@Library ('jenkinsfilesharedlibrary')  
+                            // CONSTANTS
+			final GITLAB_URL_SOURCE_JSON = 'http://gitlab-ce.gitlab.svc.cluster.local/hpmidd/devops_exchange.git'				
+			
+            final GITLAB_URL_SOURCE = 'http://gitlab-ce.gitlab.svc.cluster.local/hpmidd/devops.git'
+            //final GITLAB_URL_SOURCE_JSON = 'http://gitlab-ce.gitlab.svc.cluster.local/hpmidd/prueba1.git' // de aqui sacamos el JSON de pruebas
+			final GITLAB_URL_SOURCE_DEVOPS = 'http://gitlab-ce.gitlab.svc.cluster.local/hpmidd/devops.git' // de aqui sacamos el propiertes
+			final GITLAB_URL_SOURCE_SELENIUM = 'http://gitlab.apps.ocp.fcc.intfcc.local/hpmidd/devops_selenium.git'
+            final GITLAB_CREDENTIAL_SOURCE = 'Connect_from_Jenkins_to_GitLab'
+            final GITLAB_BRANCH_SOURCE = 'master'
+            final OUTPUT_JSON = './input/'
+            final outputLogFile = 'output/'
+            final MMVN='/tmp/tools/hudson.tasks.Maven_MavenInstallation/M3/apache-maven-3.6.3/bin/mvn'
+            final SW_NEXUS='N'
+            // PROPIEDADES
+            def JAVA_HOME='*'
+            def DXC_MDW_USER='*' 
+            def DXC_MDW_PASS='*'
+            def GMT='*'
+            // Connect to git
+            final USERNAME = 'xxxxxx'
+            final USERMAIL = 'xxxxxx'
+            final USERPASSWRD = 'M1ddleware'
+            final GIT_SOURCE = 'xxxxxxxxxxxxxt'
+            final USERCOMMIT
+
+            // Prevalidation
+			def rollback = "N"
+			def rollbackJSON = "N"
+            def Prop_Git = "prop/"
+            def StructName = "AppStruct.yml"
+            def MAVEN_FOLDER
+            def myAppStruct
+            def myDomStruct            
+            def DXC_WS = './'
+			def DIR_DEVOPSPIPE = "./DdevdeployPipe"
+			def JSONlist = "./prop/validjsonlist.json"
+			def PIPElist = "./prop/CDCIFccJbosProp.json"
+            def ruta_ans_copy=''
+            def ruta_ans_cfg=''
+            def ruta_ans_inv=''            
+            def SN_SOAP_ACTION
+            def SN_USER_PASS
+            def SN_SOAP_URL
+            def PRODU
+            //StorageJson
+            def jsonStrct
+            def jsonApp
+            def jsonModules
+            def jsonTag
+            def jsonEnv
+            def misDestMail=['xxxxxxxxxxxxxx', 'xxxxxxxxxxxxxxx']
+            def ReqID='*'
+            def tempRFC
+            def FromNexusContent = []
+            def CHANGE_TEMPLATE
+            def date_from
+			def jsonfiles
+            def date_to    
+            def StartDate = new Date()
+            def EndDate = new Date().plus(1)
+            def StageResult = 'SUCCESS'
+            def BuildResult  = '*'
+            def plusInfluxFIELDS  = [:]
+            def plusInfluxTAGS  = [:]            
+			def jsonIdPipeUno = env.BUILD_NUMBER
+			def pipe2call
+			def namebuildjob
+			def StgJson = 'StorageJson.json'
+			def StgJson_path = './json/'
+			def DIR_DEVOPS = "./selenium"
+			
+            pipeline {
+                agent {
+                        node {
+                            label "fcc-image-middleware" 
+                            customWorkspace DXC_WS + "/dxcDevopsJob_" + env.BUILD_NUMBER
+                        }
+                    }
+              tools {
+                  maven 'M3'
+                  jdk 'Default'
+              }
+
+                stages
+                { 
+
+
+        stage('Get json info from repository')     {                
+                steps {
+                    script{
+                        def start = new Date()
+                        try{
+						echo "ReqID es $ReqID"
+						ReqID = ServNowID
+                        echo "ServNowID es $ServNowID"
+                        echo "ServNowReqRes $ServNowReqRes"                    
+						outputLogFile="${outputLogFile}exeOtputLog.log" 
+                        outputLogFile="${WORKSPACE}/${outputLogFile}" 
+                            println ("Start: " + start + " Stage: " + env.STAGE_NAME)
+                                git credentialsId: GITLAB_CREDENTIAL_SOURCE, url: GITLAB_URL_SOURCE, branch: GITLAB_BRANCH_SOURCE
+                                errFile="${outputLogFile}exeOtputLog_${env.BUILD_NUMBER}.err"     
+								pintaFich("Saco el appname del anterior Pipeline", 'Info',outputLogFile)
+                                //  Cojo el StorageJson resultado del anterior Pipeline
+								echo "'$ServNowID+$StgJson'"
+                                def StorageName = ServNowID+StgJson
+                                StorageJson=readJSON file: "${StgJson_path}"+"${StorageName}"
+                                println(StorageJson)
+                                OLDlog=readFile "./output/exeOtputLog.log"
+                                // miro la app del json asi como el id de proceso del pipeline de build
+                               // APPname = StorageJson.RFCJson.parameters.app
+							    APPname = StorageJson.RFCJson.parameters.app.toString().toUpperCase()
+								rollbackJSON = StorageJson.rollback.toString() // sacamos el valor de rollback 
+							//	rollback = "S" // lo forzamos MARC
+								testclass = StorageJson.RFCJson.parameters.testclass // sacamos datos para selenium
+								tag_rollback = StorageJson.RFCJson.parameters.tag_rollback
+								FILE_JSON = StorageJson.FILE_JSON.toString() // lo sacamos para poder invocar el build si se precisa rollback
+								echo "rollback es $rollbackJSON, testclass es $testclass, FILE_JSON es $FILE_JSON "
+								
+								echo "APPname es $APPname"
+								pintaFich("Saco el appname del anterior Pipeline era $APPname ", 'Info',outputLogFile)
+
+							
+								ListStrct=readJSON file: "${PIPElist}"
+								pipe2call=ListStrct.pipelinedeploy.get(APPname).toString()
+							    namebuildjob=ListStrct.applist.get(APPname).toString()
+								
+								echo "el job a llamar es $pipe2call"
+								pintaFich("Se debe llamar el job $pipe2call", 'Info',outputLogFile)
+							}catch(Exception ex) {
+                                 echo "Error al iniciar....${ex}"
+                                 pintaFich("Error initializing,  Error: ${ex}", 'Error',outputLogFile)
+                                 error(".${ex}.")
+                            }
+					}
+				}
+		}
+				
+                stage ('Invoke deploy pipeline') {
+                    steps {
+						script {
+						def start = new Date()	
+					    try {
+						pintaFich("Call ${pipe2call}, due is ${APPname} application", 'Info',outputLogFile)
+                        println("Invoco al $pipe2call con....${ReqID} ")
+						build job: (pipe2call), parameters: [
+                        string(name: 'ServNowID', value: ReqID), string(name: 'ServNowReqRes', value: "$ServNowReqRes")]
+						}catch(Exception ex) {
+                            echo "Error al iniciar....${ex}"
+                            pintaFich("Error initializing,  Error: ${ex}", 'Error',outputLogFile)
+                            error(".${ex}.")
+                        }
+                 
+                    }
+                }
+				}
+			
+			  stage('Get java_test from selenium repository')     {      
+			when {
+                        // Ejecuto solo si no estamos en rollback
+            expression {
+				return rollbackJSON == 'N'
+                  }
+                 }				  
+              steps {
+                    script{
+                        def start = new Date()
+                        try{
+                            println ("Start: " + start + " Stage: " + env.STAGE_NAME)
+							sh "mkdir ${DIR_DEVOPS} "
+							dir (DIR_DEVOPS){
+                            git credentialsId: GITLAB_CREDENTIAL_SOURCE, url: GITLAB_URL_SOURCE_SELENIUM, branch: GITLAB_BRANCH_SOURCE
+							StageResult = 'SUCCESS'
+							}
+                        }catch(Exception ex) {
+                            echo "Error al iniciar....${ex}"
+                            pintaFich("Error initializing,  Error: ${ex}", 'Error',outputLogFile)
+							StageResult = 'FAILURE' 
+							BuildResult = 'FAILURE'
+							exitError = error
+                            error(".${ex}.")
+                        }
+							finally {
+                        if(StageResult == 'FAILURE')
+                        {
+                           error("Error at " + env.STAGE_NAME + "\nError: " + exitError)
+                        }
+                    }
+                    }
+              }
+        }     
+			
+			stage('Invocacion selenium para testeo ') {
+			when {
+                        // Ejecuto solo si no estamos en rollback y se han definido los test de selenium a ejecutar en el RFC.json
+            expression {
+				return rollbackJSON == 'N' && testclass != null 
+                  }
+                 }	
+            steps {
+                script{ 
+					def start = new Date()
+					dir (DIR_DEVOPS){
+						println (" Construyo el jar con el maven.........................")
+						sh "${MMVN} clean install"
+						for (module2test in testclass)
+						{
+						modulo2=module2test.name.toString()		
+						echo "haria la prubea de selenium con $modulo2"
+						}	
+						
+						for (module2test in testclass)
+						{
+							try{
+								modulo=module2test.name.toString()				
+								echo "Lanzado test con java ${modulo}"
+								sh "java -cp ./target/pruebaNavegacion-1.0-SNAPSHOT.jar -DtestRet=XXXX TestRunner ${modulo}"
+								sh "cat ./salidaJava.txt"
+								def d = [testRet: '*']
+								def  RC= sh(script: "grep testRet ./salidaJava.txt | grep ERROR | grep -v grep | wc -l" , returnStdout: true).trim()
+								def props = readProperties defaults: d, file: './salidaJava.txt', text: 'other=Override'
+								println (" El resultado para jenkins es.... ${props['testRet']}")
+								StageResult = 'SUCCESS' // fuerzo error para lanzar rollback MARC
+							//	StageResult = 'FAILURE'
+								BuildResult = 'SUCCESS'								
+								pintaFich("El resultado del testeo para la clase java: ${modulo} es: ${props['testRet']}" , 'Info',outputLogFile)	
+								sh "ls -ltr"
+								def mfile = readFile("${env.WORKSPACE}/${DIR_DEVOPS}/salidaJava.txt")
+								//def mfile = readFile("${env.WORKSPACE}/DdevopsSelenium/salidaJava.txt")
+								def lines = mfile.readLines()
+								for (l in lines)
+								{
+									if ( ! l.startsWith("testRet"))
+									{
+										pintaFich("==> ${l} ", 'info',outputLogFile)
+									}
+								}
+								
+									if ( RC == "1" ){
+										StageResult = 'FAILURE'
+										BuildResult = 'FAILURE'	
+									}		
+							}catch(Exception ex) {
+								pintaFich("Error al iniciar pruebaNavegacion con app java ${modulo},  Error: ${ex}", 'Error',outputLogFile)
+								pintaFich("Salida error java ${modulo},  Error: ${props}", 'Error',outputLogFile) // deberia escribir en logstash el error entero de java
+								StageResult = 'FAILURE'
+								BuildResult = 'FAILURE'
+								exitError = ex					
+							}
+							finally 
+							{
+								influxDbPublisher( selectedTarget: 'middleware-influxdb')
+								WriteInflux(start, env.STAGE_NAME+modulo, StageResult, BuildResult, plusInfluxTAGS, plusInfluxFIELDS, jsonIdPipeUno )
+								pintaFich("Final ", 'Info',outputLogFile)
+								if(StageResult == 'FAILURE'){ // si da error invocamos el rollback a no ser que vengamos de uno previo
+									rollback = 'S'	
+									pintaFich("Error in validations after first deploy. launching rollback", 'Error',outputLogFile)
+								}
+								else{
+									pintaFich("Validations ok", 'Info',outputLogFile)
+									rollback = 'N'	
+									}
+							}
+						} //for 
+					} // dir
+				}
+			}
+		 }
+			
+
+
+				
+                stage ('Invoke build for rollback ') {
+						when {
+                        expression {
+							return rollback == 'S' && tag_rollback != null //hacemos el deploy SOLO si estamos en rollback y tag_rollback esta definido en RFC.json
+                            }
+                        }	
+                    steps {
+						script {
+						def start = new Date()	
+					    try {
+						pintaFich("Call ROLLBACK due is ${APPname} application", 'Info',outputLogFile)
+                        println("Invoco al $pipe2call con....${ReqID} ")
+						build job: (namebuildjob), parameters: [
+                        string(name: 'ServNowID', value: ReqID), string(name: 'ServNowReqRes', value: "S"), string(name: 'FILE_JSON', value: FILE_JSON), string(name: 'rollback', value: 'S')
+						]
+						}catch(Exception ex) {
+                            echo "Error al iniciar....${ex}"
+                            pintaFich("Error initializing,  Error: ${ex}", 'Error',outputLogFile)
+                            error(".${ex}.")
+                        }
+                 
+                    }
+                }
+				}
+
+	
+				
+				
+// subo el log a git				
+				stage('Upload log file'){    
+					steps {
+						script{
+							echo "el log original tenia esto:"
+							def nulljsonIdPipeUno=""
+							println (OLDlog)
+							writeFile(file: 'output/output.log', text: OLDlog)
+							pintaFich("Final deploy stage... ", 'Info', outputLogFile)                                                    
+						try {
+							writeFile file: "output/output.log", text: (OLDlog)
+							salvarLog (outputLogFile, USERMAIL, USERNAME, USERPASSWRD, GIT_SOURCE, GITLAB_BRANCH_SOURCE, GITLAB_CREDENTIAL_SOURCE, GITLAB_URL_SOURCE, nulljsonIdPipeUno )
+							StageResult = 'SUCCESS'
+							BuildResult = 'SUCCESS'
+							}
+						catch(Exception ex) {
+							echo "Error en Upload log file --> ${ex}"
+							pintaFich("Error Uploading log file,  Error: ${ex}", 'Error',outputLogFile)
+							salvarLog (outputLogFile, USERMAIL, USERNAME, USERPASSWRD, GIT_SOURCE, GITLAB_BRANCH_SOURCE, GITLAB_CREDENTIAL_SOURCE, GITLAB_URL_SOURCE, nulljsonIdPipeUno )
+							StageResult = 'FAILURE'                         
+							exitError = ex
+						}finally {
+							if(StageResult == 'FAILURE')
+							{
+							error("Error at " + env.STAGE_NAME + "\nError: " + exitError)
+							}
+						}
+
+                   }
+                   
+               }
+            }
+				
+				} // stages
+
+				
+                ////////////////////////////////////////////////////////////////        
+                  // fin de pipeline 
+        post {
+            failure {
+                echo "Se supone que esto se ejecuta tanto si va bien como si no -....."
+            //    echo "Var de entrada jsonApp -.${jsonApp}...."
+                echo '=============================================='
+                script{
+                     echo "HARIA ALGO EN CASO DE ERROR AL FINAL DE LOS STEPS...."
+                }        
+            }
+        }        
+
+        
+}
