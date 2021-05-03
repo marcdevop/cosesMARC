@@ -1,0 +1,818 @@
+	@Library ('jenkinsfilesharedlibrary')  
+	//final GITLAB_URL_SOURCE = 'http://gitlab-ce.gitlab.svc.cluster.local/hpmidd/devops.git' //antiguo ha cambiado dominio?
+	final GITLAB_URL_SOURCE = 'http://gitlab.apps.ocp.fcc.intfcc.local/hpmidd/devops.git'
+	final GITLAB_URL_SOURCE_JSON = 'http://gitlab-ce.gitlab.svc.cluster.local/hpmidd/devops_exchange.git'
+	//final GITLAB_URL_SOURCE_JSON = 'http://gitlab.apps.ocp.fcc.intfcc.local/hpmidd/prueba1.git'
+	final GITLAB_URL_SOURCE_SELENIUM = 'http://gitlab.apps.ocp.fcc.intfcc.local/hpmidd/devops_selenium.git'
+	final GITLAB_URL_SOURCE_MULE = 'http://gitlab.apps.ocp.fcc.intfcc.local/hpmidd/devops_mule.git'
+    //final GITLAB_URL_SOURCE_MULE_APP = 'http://gitlab.apps.ocp.fcc.intfcc.local/mule-api-manager-developers/mule-api-manager.git'
+	//final GITLAB_URL_SOURCE_MULE_APP = 'http://gitlab.apps.ocp.fcc.intfcc.local/hpmidd/devops_mule.git'
+	final GITLAB_URL_SOURCE_MULE_APP = 'http://gitlab.apps.ocp.fcc.intfcc.local/mule-api-manager-developers/mule-api-manager.git'
+
+    //final GITLAB_CREDENTIAL_SOURCE = 'GitLab Cred'
+    final GITLAB_CREDENTIAL_SOURCE = 'Connect_from_Jenkins_to_GitLab'
+    final GITLAB_BRANCH_SOURCE = 'master'
+
+    import java.text.SimpleDateFormat    
+    //final DXC_WS = 'xxxxxxxxxxxxxxxxxxxxxxxxxxx'
+    final DXC_WS = './'
+    final JENKINS_LABEL = 'master'
+    final ANSIBLE_LABEL = 'fcc-image-ansible'
+   // final FILE_JSON = 'input/RFC.json'
+    final FILE_PROP = 'prop/CDCIFccJbosProp.json'
+    final ANSIBLE = 'ansible/Test.yml'
+    final INVENT = 'ansible/inventory.ini'
+    final MODULES_NO_PACKAGES =['APACHE','JAR']
+
+    final OUTPUT_JSON = './input/'
+    final outputLogFile = './output/'
+    // final MMVN='/var/lib/jenkins/tools/hudson.tasks.Maven_MavenInstallation/M3/apache-maven-3.6.3/bin/mvn'
+    final MMVN='/tmp/tools/hudson.tasks.Maven_MavenInstallation/M3/apache-maven-3.6.3/bin/mvn'
+    //final SW_NEXUS='N'
+    
+    // GIT VARIABLES
+    def ENV_GIT_URL     
+    def ENV_GIT_COMMIT
+    def ENV_GIT_SHORT_COMMIT
+    def ENV_GIT_BRANCH
+    def ENV_GIT_COMMITTER_EMAIL
+    def ENV_GIT_COMMITTER_NAME
+    def GMT='*'
+    def SN_SOAP_ACTION
+    def SN_USER_PASS
+    def SN_SOAP_URL
+
+	def DXC_MDW_USER
+	def DXC_MDW_PASS
+	def PRODU	
+	def GITLAB_URL_RAW
+	def ADM_SERVER
+	def ADM_USER
+	def ADM_PASSWD
+	
+	
+	
+    // PROPIEDADES
+    def PATH_STRUCTS = "prop/"
+    def JAVA_HOME='*'
+    def StgJson = 'StorageJson.json'
+    def StgJson_path = './json/'
+    def StorageJson
+    def jsonModules
+    def jsonEnv
+    def myAppStruct
+    def myDomStruct
+    def jsonApp
+    def jsonTag
+    def myDataList=[]
+    def jsonFromNexus
+    def jsonIdPipeUno    
+    def StageResult = 'SUCCESS'
+    def deployStatus = '*'
+    
+    // Influx parameters
+    def user = "undefined"
+    def exitError
+    def BuildResult  = '*'
+    // otras
+    def date_from
+    def date_to    
+    def StartDate = new Date()
+    def EndDate = new Date().plus(1)
+    def Ahora = new Date()
+    def dateFormat = "yyyy-MM-dd' 'HH:mm:ss"
+    def resDeploy="Deploy without errors"
+    def sw_restart='N'
+    def dom_restart=[]
+    def plusInfluxFIELDS  = [:]
+    def plusInfluxTAGS  = [:]            
+    def miPlantillaSN
+    def misDestMail
+	def STAGEINFO = ""
+
+	//def ServNowID = "88"
+	//def ServNowReqRes = "S"
+    
+    // Connect to git
+    final USERNAME = 'xxxxx'
+    final USERMAIL = 'xxxxxxxxxxx'
+	//final USERMAIL = 'xxxxxxxxxxxxxxxxx'
+    final USERPASSWRD = 'M1ddleware'
+    final GIT_SOURCE = 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
+	final GIT2_SOURCE = 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
+    final USERCOMMIT
+	
+
+    pipeline {
+        
+        agent {
+                node {
+                    label "fcc-image-middleware" 
+                    customWorkspace DXC_WS + "/dxcDevopsJob_" + env.BUILD_NUMBER
+                    //    def userName = env.BUILD_USER_ID
+                    // def userName =  env.BUILD_USER_ID        
+                }
+            }
+      tools {
+           jdk 'Default'
+           maven 'M3'
+     }
+      
+      environment {
+            // This can be nexus3 or nexus2
+            NEXUS_VERSION = "nexus3"
+            // This can be http or https
+            NEXUS_PROTOCOL = "https"
+            // Where your Nexus is running
+            NEXUS_URL = "nexus3.apps.ocp.fcc.intfcc.local"
+            // Repository where we will upload the artifact
+            NEXUS_REPOSITORY = "DXC-DevOps"
+            // Jenkins credential id to authenticate to Nexus OSS
+            NEXUS_CREDENTIAL_ID = "nexus-credentials"
+        }
+
+        stages
+        { 
+            stage('CheckOut GitLab repository') {
+                steps {
+                    script{ 
+						//sh "echo 'ServNowID: ${ServNowID} ServNowReqRes ${ServNowReqRes}'"
+                        def res = sh(returnStdout: true, script: "mkdir -p ${OUTPUT_JSON} ").trim()
+                        sh "echo 'Respuesa al generar 2 :' ${res}"
+
+                    // Provisional
+                    //    sh "${MMVN} -v" 
+                        
+                        
+                        def start = new Date()
+                        println ("Job number: " + env.JOB_NAME + " Build: " + env.BUILD_NUMBER )
+                        try {
+                            // Build things here
+                            if ( currentBuild.result == null) {
+                                currentBuild.result = 'SUCCESS' // sets the ordinal as 0 and boolean to true
+                                StageResult = 'SUCCESS'
+                            }
+                        } catch (err) {
+                            if (currentBuild.result == null) {
+                                currentBuild.result = 'FAILURE' // sets the ordinal as 4 and boolean to false
+                            }
+                            println("Error en " + env.STAGE_NAME)
+                            StageResult = 'FAILURE'
+                            throw err
+                        } 
+                    }
+                }
+            }
+   
+	
+//////////////////////////////
+
+
+
+
+        stage('Get Devops repository')     {                
+                steps {
+                    script{
+                        def start = new Date()
+                        try{
+                        ////--------------------------------
+                        
+                        echo (ServNowID)
+                        echo ("pintoooooooooooooooooooooooooooooooooooooooo")
+                        //echo (ServNowReqDate)
+                        echo (ServNowReqRes)                    
+                        //echo "SW NEXUS VALE.......${SW_NEXUS}"
+                        if (ServNowReqRes.toUpperCase() != 'S')
+                        {
+                            //error("TEMPORAL, ME VOY POR NO ACEPTAR...${ServNowReqRes}")
+                            println("TEMPORAL, ME VOY POR NO ACEPTAR...${ServNowReqRes}")
+                        }
+                        ////--------------------------------
+                            println ("Start: " + start + " Stage: " + env.STAGE_NAME)
+                            try{
+                                println ("Starting try ")
+                                // ... Primero me clono el repo
+                                git credentialsId: GITLAB_CREDENTIAL_SOURCE, url: GITLAB_URL_SOURCE, branch: GITLAB_BRANCH_SOURCE
+                                //def tmp=sh(returnStdout: true, script: "date '+%Y%m%d_%H%M%S'").trim()
+                                errFile="${outputLogFile}exeOtputLog_${env.BUILD_NUMBER}.err"            
+
+                                //Recupero del properties
+                                try {
+                                    def foundProp = findFiles(glob: '**/' + FILE_PROP)
+                                    def PropStruct=readJSON file: "${foundProp[0].path}"
+                                    echo PropStruct.toString()
+                                     GMT=PropStruct.GMT.toString()
+                                    SN_SOAP_ACTION=PropStruct.SN_SOAP_ACTION.toString()
+                                    SN_USER_PASS=PropStruct.SN_USER_PASS.toString()
+                                    SN_SOAP_URL=PropStruct.SN_SOAP_URL.toString()
+                                }catch(Exception ex) {
+                                    echo "Error al buscar y leer el json de propiedades --> ${ex}"
+                                    pintaFich("Error finding property file,  Error: ${ex}", 'Error',outputLogFile)
+                                    GMT='GMT+1'
+                                    error('Can not reach property file')
+                                }
+
+                                //  Cojo el StorageJson resultado del anterior Pipeline
+								echo "'$ServNowID+$StgJson'"
+                                def StorageName = ServNowID+StgJson
+                                
+                                StorageJson=readJSON file: "${StgJson_path}"+"${StorageName}"
+                                println(StorageJson)
+                                
+                                // Load params from Storage Json
+                                jsonModules=StorageJson.RFCJson.parameters.modules
+                                jsonEnv = StorageJson.RFCJson.parameters.environment
+                                jsonApp = StorageJson.RFCJson.parameters.app
+                                jsonTag = StorageJson.RFCJson.parameters.tag
+								rollback = StorageJson.rollback // el rollback lo pasa el 
+                                //jsonFromNexus = StorageJson.FromNexus
+                                jsonIdPipeUno = StorageJson.PipelineID
+								FILE_JSON = StorageJson.FILE_JSON
+                                env.PIPEUNO=jsonIdPipeUno
+                                // ... escribo en el mismo fichero que escribio el otro pipeline
+                                outputLogFile="${outputLogFile}exeOtputLog_${jsonIdPipeUno}.log"
+                                
+                                pintaFich(" Start processing FCC CI Deploy Process, number :${env.BUILD_NUMBER} with origin Ref number: ${jsonIdPipeUno}", 'Info', outputLogFile)                                
+                                pintaFich(" Start processing FCC CI Deploy Process, ServiceNow Id :${ServNowID} ", 'Info', outputLogFile)                                
+                                pintaFich(" Start processing FCC CI Deploy Process, Deploy Confirmation is :${ServNowReqRes} ", 'Info', outputLogFile)                                                                
+                                
+                                //.. Ahora cargo el fichero de estructura de la aplicacion en curso
+                                //myAppStruct="${jsonApp}AppStruct.yml"
+								// se anula porque espera MULE-APIManagerAppStruct.yml y encuentra MULE-APIManagerStruct.yml
+								myAppStruct="${jsonApp}Struct.yml"
+                                myAppStruct=readYaml (file: "${PATH_STRUCTS}${myAppStruct}")
+
+                                myDomStruct=readYaml (file: "${PATH_STRUCTS}DomineStruct.yml")
+							    if ( rollback != 'S' ){ 
+								
+                                //..Ahora cojo las fechas y calculo el tiempo
+                                def date_from_d=StorageJson.RFCJson.parameters.date_impl_from
+                                def date_from_t=StorageJson.RFCJson.parameters.time_impl_from
+                                date_from="${date_from_d} ${date_from_t}:00"
+                                        
+                                def date_to_d=StorageJson.RFCJson.parameters.date_impl_to
+                                def date_to_t=StorageJson.RFCJson.parameters.time_impl_to
+                                date_to="${date_to_d} ${date_to_t}:00"
+
+                                println("La fecha y hora desde " + date_from + "y hasta : " + date_to)
+                                pintaFich("The modules in RFC.json are: ${jsonModules.toString()}", 'Info',outputLogFile)                    
+                                
+                                //def dateFormat = "yyyy-MM-dd' 'HH:mm:ss"
+                                StartDate = new SimpleDateFormat(dateFormat).parse(date_from)
+                                EndDate = new SimpleDateFormat(dateFormat).parse(date_to)
+                                
+                                ya = new SimpleDateFormat(dateFormat).format(Ahora)
+                                
+                                //println " el tipo de date_from es " + date_from.getClass()
+                                //println " el tipo de ya es " + ya.getClass()                                
+                                AhoraGMT=Ahora.format(dateFormat, TimeZone.getTimeZone(GMT))
+                                echo "la fecha de ahora CON GMT....${AhoraGMT}"
+
+                                //Ahora = new SimpleDateFormat(dateFormat).parse(ya)
+                                Ahora = new SimpleDateFormat(dateFormat).parse(AhoraGMT)
+                                echo "la fecha de ahora es....${Ahora}"
+                                
+                                //Calculo la diferencia de horas
+                                //def mydiff=EndDate.getTime() - StartDate.getTime();
+                                def mydiff=StartDate.getTime() - Ahora.getTime();
+                                
+                                echo "la diferencia es.....${mydiff}"
+								if (rollback != 'S') {
+                                if ( mydiff < 0 ) //anulado por marc
+								//if ( "a" == "b" ) 	
+                                {
+                                    echo 'La fecha de inicio ya ha pasado y miro la de fin'    
+                                    def mydifffin =EndDate.getTime() - Ahora.getTime();
+                                    if ( mydifffin < 0 )
+                                    {
+										if ( jsonEnv.toString().toUpperCase() == 'PRO'){
+                                        echo 'La fecha de fin ya ha pasado y paro la ejecucion pero antes llamo a cancelar cambio'
+                                        pintaFich(" End time ${EndDate} is minor than now ${Ahora} * Exit process * ", 'Info',outputLogFile)
+                                        // isi comento 2 lineas temporal
+                                          cancelarCambio(StorageJson, " ** [CDCI] The schedule dates are passed and Application is not deployed ** ", SN_SOAP_ACTION, SN_USER_PASS, SN_SOAP_URL )
+                                          error("End time ${EndDate} is minor than now ${Ahora} * Exit process *")
+										}
+										else {
+										echo 'La fecha de fin ya ha pasado y paro la ejecucion directamente. Es un entorno de previos. no habia cambio'
+                                        pintaFich(" End time ${EndDate} is minor than now ${Ahora} * Exit process * ", 'Info',outputLogFile)	
+										error("End time ${EndDate} is minor than now ${Ahora} * Exit process *")	
+										}
+                                    }
+                                    echo 'La fecha de ahora esta entre la de inicio y fin'
+                                    mydiff=0;                                    
+                                }
+                                echo "la diferencia luego es.....${mydiff}"
+                                mydiff=mydiff / 1000;
+                                echo "la diferencia despues de dividor por 1000.....${mydiff}"
+                                println mydiff.getClass()
+                                
+                                echo 'genero calendar 1'
+                                Calendar calendar = Calendar.getInstance();
+                                echo 'genero calendar 2'                                        
+                                calendar.setTime(StartDate);
+                                echo 'genero calendar 3'                                        
+                                def dia = calendar.get(Calendar.DAY_OF_WEEK);
+                                echo 'genero calendar dia W '+dia         
+                                echo 'genero calendar HORA '+calendar.get(Calendar.HOUR_OF_DAY);
+                                echo 'genero calendar MINUTO '+calendar.get(Calendar.MINUTE);
+                                echo 'genero calendar SEG '+calendar.get(Calendar.SECOND);
+                                echo 'genero calendar MOHT '+calendar.get(Calendar.MONTH);
+                                echo 'genero calendar DAte '+calendar.get(Calendar.DATE);   
+                                echo 'genero calendar DAY_OF_MONTH '+calendar.get(Calendar.DAY_OF_MONTH); 
+                                def micron="${calendar.get(Calendar.MINUTE)} ${calendar.get(Calendar.HOUR_OF_DAY)} ${calendar.get(Calendar.DAY_OF_MONTH)} ${calendar.get(Calendar.MONTH)+1} * "
+                                println ("TODO QUEDARIA........micron........: ${micron} ")
+                                println ("TODO QUEDARIA................: ${calendar.get(Calendar.MINUTE)} ${calendar.get(Calendar.HOUR_OF_DAY)} ${calendar.get(Calendar.DAY_OF_MONTH)} ${calendar.get(Calendar.MONTH)+1} * ")                                        
+                         
+                                //steps {
+                                //sleep time: 250, unit: 'MILLISECONDS'
+                                //    }
+                                pintaFich("Waiting for start date, sleeping for : ${mydiff.toString()} seconds.", 'Info',outputLogFile) 
+                                sleep(mydiff)
+                                pintaFich("Finish waiting and start desploy...", 'Info',outputLogFile) 
+                                //...hasta aqui  
+								} // fin condicion rollback
+
+                                //error(".ME PIRO....................")
+								} // fin if rollback para anular control horario en caso de rollback
+								else {
+								STAGEINFO = "ROLLBACK "
+								}
+                                println ("Json con parametros encontrado: " )
+                                pintaFich(' Storage.json file found. ', 'Info',outputLogFile)
+                            }catch(Exception ex) {
+                                    echo "Error al iniciar....${ex}"
+                                    pintaFich("Error initializing,  Error: ${ex}", 'Error',outputLogFile)
+                                    error(".${ex}.")
+                            }
+                            StageResult = 'SUCCESS'    
+                        }catch (error){
+                            println("Error at " + env.STAGE_NAME + "\nError: " + error)
+                            StageResult = 'FAILURE'
+                            BuildResult = 'FAILURE'
+                            exitError = error
+                        }
+                        finally{
+                            println("En el finally ....1...")
+                            //myDataList=WriteInflux(start, STAGEINFO+env.STAGE_NAME,user,jsonEnv, jsonApp, jsonTag, StageResult, env.BUILD_NUMBER, BuildResult,myDataList,false,outputLogFile )
+                                try{
+                                    influxDbPublisher( selectedTarget: 'middleware-influxdb')
+                                    plusInfluxTAGS['ENV']=jsonEnv
+                                    plusInfluxTAGS['APP']=jsonApp
+                                    plusInfluxFIELDS['TAG']=jsonTag
+                                    plusInfluxFIELDS['CHNG']=ServNowID
+                                    plusInfluxFIELDS['FX']=date_from
+                                    WriteInflux(start, STAGEINFO+env.STAGE_NAME, StageResult, BuildResult, plusInfluxTAGS, plusInfluxFIELDS, jsonIdPipeUno )            
+                                }catch (errori){
+                                    println("Error accessing to INflux " + env.STAGE_NAME + "\nError: " + errori)
+                                }
+                            if(StageResult == 'FAILURE')
+                            {
+                                error("Error at " + env.STAGE_NAME + "\nError: " + exitError)                
+                            }
+                        }
+                        
+                }    
+            }
+        }
+	
+	
+	    stage('Getting Structure data')     {
+                        when {
+                            // Ejecuto solo si no estamos en rollback
+                            expression {
+							   return  rollback == 'N' ;
+                                }
+                        }
+                        steps {
+                            script{
+                                def start = new Date()
+                                try{
+								    myDomStruct=readYaml (file: "${env.WORKSPACE}/prop/DomineStruct.yml")
+									//myAppStruct=readYaml (file: "${env.WORKSPACE}/prop/MULEAppStruct.yml")
+									//myAppStruct=readYaml (file: "${env.WORKSPACE}/prop/MULE-APIManagerStruct.yml")
+									myAppStruct=readYaml (file: "${env.WORKSPACE}/prop/${jsonApp}Struct.yml")
+									sh "echo myAppStruct es esto"
+									
+									println (myAppStruct)
+                                    echo myAppStruct.toString()
+                                    // --> jsonEnv                                
+                                    def myE=jsonEnv.toString().toUpperCase()	
+                                    MAVEN_FOLDER=myAppStruct.APP_STRUCT.get(myE).MAVEN_FOLDER
+                                    misDestMail =myAppStruct.APP_STRUCT.get(myE).MAIL_TO
+                                    echo "misDestMail --- ${misDestMail}"
+                                    echo "MVN folder: " + MAVEN_FOLDER
+                                    GITLAB_URL_RAW=myAppStruct.APP_STRUCT.get(myE).GITLAB_URL_RAW.toString()
+									CONF2USE=myAppStruct.APP_STRUCT.get(myE).get('MODULES').get('PROPERTIES').get('properties').SOURCE_PROPERTIES_PATH.keySet()
+									
+									  for (CONF in CONF2USE)
+                                                {
+                                                    ADM_SERVER=myDomStruct.DOMAIN_STRUCT.get(myE).get('DOMAINS').get(CONF).get('ADM_SERVER').toString() //LLLLL
+													ADM_USER=myDomStruct.DOMAIN_STRUCT.get(myE).get('DOMAINS').get(CONF).get('ADM_USER').toString()
+													ADM_PASSWD=myDomStruct.DOMAIN_STRUCT.get(myE).get('DOMAINS').get(CONF).get('ADM_PASSWD').toString()
+                                                }    
+			
+									echo "muestra el valos de CONF2USE ${CONF2USE}"
+									ENVPARAM=myAppStruct.APP_STRUCT.get(myE).ENVPARAM.toString()
+									//DarmTarget=myAppStruct.APP_STRUCT.get(myE).DarmTarget.toString()
+                                    echo " ----GITLAB_URL_RAW ---> ${GITLAB_URL_RAW}"
+                                    URL_TEST_VERSION=myAppStruct.APP_STRUCT.get(myE).URL_TEST_VERSION.toString()
+                                    //echo " ----URL_TEST_VERSION ---> ${URL_TEST_VERSION}"
+                                    CHANGE_TEMPLATE=myAppStruct.APP_STRUCT.get(myE).CHANGE_TEMPLATE.toString()
+                                    //echo " ----CHANGE_TEMPLATE ---> ${CHANGE_TEMPLATE}"
+                                    pintaFich(" From ${jsonApp}AppStruct.yml. get: URL_TEST_VERSION: ${URL_TEST_VERSION}",'Info', outputLogFile)                        //pintaFich(" From ${jsonApp}AppStruct.yml. get: URL_TEST_VERSION: '${URL_TEST_VERSION}' ", 'Info',outputLogFile)
+                                    pintaFich(" From ${jsonApp}AppStruct.yml. get: MAVEN_FOLDER: ${MAVEN_FOLDER}", 'Info',outputLogFile)                    
+                                    StageResult = 'SUCCESS'
+                                }catch(Exception ex) {
+                                            echo "Error accediendo al fichero de estructura....$myAppStruct,   Error: ${ex}"
+                                            pintaFich("Error accediendo al fichero de estructura....${myAppStruct},  Error: ${ex}", 'Error',outputLogFile)
+                                            //error("Error accediendo al fichero de estructura.")
+                                            StageResult = 'FAILURE'
+                                            BuildResult = 'FAILURE'
+                                }
+                                finally{
+                                    println("En el finally ..Getting Structure data..")
+                                    sh "ls -ltr"
+                                    try{
+                                        influxDbPublisher( selectedTarget: 'middleware-influxdb')
+                                        WriteInflux(start, STAGEINFO+env.STAGE_NAME, StageResult, BuildResult, plusInfluxTAGS, plusInfluxFIELDS, jsonIdPipeUno )
+										echo "escribiria en influx"
+                                    }catch (errori){
+                                        println("Error accessing to INflux " + env.STAGE_NAME + "\nError: " + errori)
+                                    }
+    
+                                    if(StageResult == 'FAILURE')
+                                    {
+                                        error("Error at " + env.STAGE_NAME + "\nError: " + exitError)                
+                                    }
+                                }    
+                            }
+                        }
+                    }
+	
+	stage('copy partial_settings.xml and pom from mule repository')     {     
+                        when {
+                            // Ejecuto solo si no estamos en rollback
+                            expression {
+							   return  rollback == 'N'  ;
+                                }
+                        }
+              steps {
+                    script{
+                        def start = new Date()
+						
+                        try{
+                            println ("Start: " + start + " Stage: " + env.STAGE_NAME)
+							sh "mkdir MULE"
+							URLMULE = "http://"+GITLAB_URL_RAW
+							echo "${URLMULE}"
+							dir("${env.WORKSPACE}/MULE"){
+								println ("Bajamos el repo de mule APP")
+								//git credentialsId: GITLAB_CREDENTIAL_SOURCE, url: GITLAB_URL_SOURCE_MULE_APP, branch: GITLAB_BRANCH_SOURCE
+							    git credentialsId: GITLAB_CREDENTIAL_SOURCE, url: URLMULE, branch: GITLAB_BRANCH_SOURCE
+							}	
+						}catch(Exception ex) {
+                            echo "Error al iniciar....${ex}"
+                            pintaFich("Error initializing,  Error: ${ex}", 'Error',outputLogFile)
+							StageResult = 'FAILURE'
+							BuildResult = 'FAILURE'    
+                          //  error(".${ex}.")
+                        }
+					
+						try{
+							sh "mkdir SETTING"
+							dir("${env.WORKSPACE}/SETTING"){
+								println ("Bajamos el repo de mule APP y lo dejamos en /MULE")
+								git credentialsId: GITLAB_CREDENTIAL_SOURCE, url: GITLAB_URL_SOURCE_MULE, branch: GITLAB_BRANCH_SOURCE
+								sh "cp partial_settings.xml ../MULE"
+								StageResult = 'SUCCESS'
+							}	
+						}catch(Exception ex) {
+                            echo "Error al iniciar....${ex}"
+                            pintaFich("Error initializing,  Error: ${ex}", 'Error',outputLogFile)
+							StageResult = 'FAILURE'
+							BuildResult = 'FAILURE'    
+                          //  error(".${ex}.")
+						}
+					
+						finally {
+                                try{
+                                    influxDbPublisher( selectedTarget: 'middleware-influxdb')
+                                    WriteInflux(start, STAGEINFO+env.STAGE_NAME, StageResult, BuildResult, plusInfluxTAGS, plusInfluxFIELDS, jsonIdPipeUno )            
+                                }catch (errori){
+                                    println("Error accessing to INflux " + env.STAGE_NAME + "\nError: " + errori)
+                                }
+                                if(StageResult == 'FAILURE')
+                                {
+                                   error("Error at " + env.STAGE_NAME + "\nError: " + exitError)
+                                }
+                        }	
+					}	
+			  }
+		}
+		
+		
+		stage('Get Props from repository')     {
+                        steps {
+                            script{
+                                def start = new Date()
+								(JAVA_HOME, DXC_MDW_USER, DXC_MDW_PASS, SN_SOAP_ACTION, SN_USER_PASS, SN_SOAP_URL, PRODU, GMT)=GetPropsfromrepo ([ start, outputLogFile, FILE_PROP, STAGE_NAME, env.WORKSPACE ])
+								}								
+                            }
+                        }
+	
+	              //..Ahora hago los despliegues 
+		stage('mvn build for MULE'){ 			
+              steps {
+                    script{
+                        def start = new Date()
+						    try{
+							//añadido para corregir error de no usar el tag
+                            println ("Start: " + start + " Stage: " + env.STAGE_NAME)
+							dir("${env.WORKSPACE}/MULE"){
+							echo "voy a llamar al git con el tag ${jsonTag}"
+                            def GITLAB_URL_WITHUSERANDPASS='http://' + DXC_MDW_USER + ':' + DXC_MDW_PASS + '@' + GITLAB_URL_RAW
+                            def salidaGit= sh(script:'git clone --branch ' + jsonTag + ' ' + GITLAB_URL_WITHUSERANDPASS + ' > shell.log 2>>shell.log' , returnStdout : true ).trim() 
+                            echo "despues de git ---> ${salidaGit}"
+							//
+							sh "ls -ltr"
+							sh "echo 'deployamos en maven'"
+							sh "${MMVN} -X -e --settings partial_settings.xml install mule:deploy  -DarmUser=${ADM_USER} -DarmPwd=${ADM_PASSWD} -DarmTarget=${ADM_SERVER} -DarmEnvironment=${ENVPARAM} -P deployProfile"
+							StageResult = 'SUCCESS'
+							}	
+						}catch(Exception ex) {
+                            echo "Error al iniciar....${ex}"
+                            pintaFich("Error initializing,  Error: ${ex}", 'Error',outputLogFile)
+							StageResult = 'FAILURE'
+                        }
+						finally {
+                                try{
+                                    influxDbPublisher( selectedTarget: 'middleware-influxdb')
+                                    WriteInflux(start, STAGEINFO+env.STAGE_NAME, StageResult, BuildResult, plusInfluxTAGS, plusInfluxFIELDS, jsonIdPipeUno )            
+                                }catch (errori){
+                                    println("Error accessing to INflux " + env.STAGE_NAME + "\nError: " + errori)
+                                }
+                                if(StageResult == 'FAILURE')
+                                {
+                                   error("Error at " + env.STAGE_NAME + "\nError: " + exitError)
+                                }
+                            }
+					}
+			  }
+		}
+	
+    stage("Close Change in Service Now Cancelled") {
+                  when {
+                    // Ejecuto solo si se ha aceptado la peticion  y no es rollback
+                    expression {
+                        return ServNowReqRes.toUpperCase() != 'S' && rollback == 'N';
+                        }
+                    }
+                steps {
+                    script {
+                        def start = new Date()
+                        try{
+                            pintaFich("Cancel Change in SN because reject ", 'Info', outputLogFile)                                                    
+                            echo " cancelo el cambio por rechazo desde el ServiceNow"
+                            cancelarCambio(StorageJson, " ** [CDCI] This change have not been confirmed and Application is not deployed ** ", SN_SOAP_ACTION, SN_USER_PASS, SN_SOAP_URL )
+                            StageResult = 'SUCCESS'
+                        }
+                            catch(Exception ex) {
+                            echo "Error al conectar con Service Now --> ${ex}"
+                            pintaFich("Error closing change in Service Now,  Error: ${ex}", 'Error',outputLogFile)
+                           // salvarLog (outputLogFile, USERMAIL, USERNAME, USERPASSWRD, GIT_SOURCE)
+						   salvarLog (outputLogFile, USERMAIL, USERNAME, USERPASSWRD, GIT_SOURCE, GITLAB_BRANCH_SOURCE, GITLAB_CREDENTIAL_SOURCE, GITLAB_URL_SOURCE, jsonIdPipeUno )
+                            //error("Error al conectar con Service Now.")
+                            StageResult = 'FAILURE'                            
+                            //BuildResult = 'FAILURE'
+                            exitError = ex
+                            }finally {
+                                try{
+                                    influxDbPublisher( selectedTarget: 'middleware-influxdb')
+                                    WriteInflux(start, STAGEINFO+env.STAGE_NAME, StageResult, BuildResult, plusInfluxTAGS, plusInfluxFIELDS, jsonIdPipeUno )            
+                                }catch (errori){
+                                    println("Error accessing to INflux " + env.STAGE_NAME + "\nError: " + errori)
+                                }
+                                if(StageResult == 'FAILURE')
+                                {
+                                   error("Error at " + env.STAGE_NAME + "\nError: " + exitError)
+                                }
+                            }
+                    }
+                }
+            }
+        
+        
+            stage("Close Change in Service Now Executed") {
+                  when {
+                    // Ejecuto solo si se ha aceptado la peticion, es PRO y no estamos rollback
+                    expression {
+						return (ServNowReqRes.toUpperCase() == 'S' &&  jsonEnv.toString().toUpperCase() == 'PRO') ||  rollback != 'S' ;
+                       // return ServNowReqRes.toUpperCase() == 'S' && rollback == 'N';
+                        }
+                    }
+                steps {
+                    script {
+                        def start = new Date()
+                        try{
+                            def changeID = StorageJson.ReqServNowID
+                            pintaFich("Closing Change ${changeID} in SN ", 'Info', outputLogFile)                                                    
+                            sh 'echo "Voy a cerrar el cambio" '
+                            // Web Service 
+                            // Modify Envelope
+
+                            //Espero a que llegue la fecha de fin
+                            Ahora = new Date()
+                            AhoraGMT=Ahora.format(dateFormat, TimeZone.getTimeZone(GMT))
+                            echo "la fecha de ahora CON GMT....${AhoraGMT}"
+                            Ahora = new SimpleDateFormat(dateFormat).parse(AhoraGMT)
+                            echo "La nueva ahora es..${Ahora}"
+                            def mydifffin =EndDate.getTime() - Ahora.getTime();
+                            if ( mydifffin < 0 )
+                            {
+                                mydifffin=0
+                            }
+                            mydifffin=(mydifffin/1000 )+ 1
+                            echo "voy a esperar ${mydifffin} segundos"
+                            sleep(mydifffin)
+                            echo "Continuo con el cierre despues de haber esperado"
+                            def CloseChangeXML = '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:fcc="http://www.service-now.com/FCCAutomatedChanges"><soapenv:Header/><soapenv:Body><fcc:execute><u_function>close</u_function><u_sn_change_number>'+changeID+'</u_sn_change_number><u_close_code>0</u_close_code><u_close_notes>'+resDeploy+'</u_close_notes></fcc:execute></soapenv:Body></soapenv:Envelope>'
+
+                            println("Escribir en el file")
+                            writeFile file: "CloseChangeEnvelope.xml", text: CloseChangeXML
+                            
+                            println ("Texto actualizado")
+                            sh "cat CloseChangeEnvelope.xml"
+
+
+                            // @Envelope.xml  @CreateReqEnvelope.xml
+                            //def res = sh(returnStdout: true, script:' curl -i -X POST   --header "Content-Type: text/xml" --header SOAPAction: "http://www.service-now.com/FCCAutomatedChanges/execute" --data-binary @CloseChangeEnvelope.xml  --user "webapps.integration.user:W3b4pps.1tg"     https://fcc.service-now.com/FCCAutomatedChanges.do?SOAP > Incidents.txt').trim()
+                            def res = sh(returnStdout: true, script:' curl -i -X POST   --header "Content-Type: text/xml" --header SOAPAction: '+SN_SOAP_ACTION+' --data-binary @CloseChangeEnvelope.xml  --user '+SN_USER_PASS+'  '+SN_SOAP_URL+' > Incidents.txt').trim()
+     
+         
+                            def resServNow =  sh(returnStdout: true, script:'cat Incidents.txt').trim()
+                            println(resServNow)
+                            StageResult = 'SUCCESS'
+                        }
+                            catch(Exception ex) {
+                                echo "Error al conectar con Service Now --> ${ex}"
+                                pintaFich("Error closing change in Service Now,  Error: ${ex}", 'Error',outputLogFile)
+                                salvarLog (outputLogFile, USERMAIL, USERNAME, USERPASSWRD, GIT_SOURCE, GITLAB_BRANCH_SOURCE, GITLAB_CREDENTIAL_SOURCE, GITLAB_URL_SOURCE, jsonIdPipeUno )
+                                //error("Error al conectar con Service Now.")
+                                StageResult = 'FAILURE'                                                            
+                                //BuildResult = 'FAILURE'
+                                exitError = ex
+                            }finally {
+                                try{
+                                    influxDbPublisher( selectedTarget: 'middleware-influxdb')
+                                    WriteInflux(start, STAGEINFO+env.STAGE_NAME, StageResult, BuildResult, plusInfluxTAGS, plusInfluxFIELDS, jsonIdPipeUno )            
+                                }catch (errori){
+                                    println("Error accessing to INflux " + env.STAGE_NAME + "\nError: " + errori)
+                                }
+                                if(StageResult == 'FAILURE')
+                                {
+                                   error("Error at " + env.STAGE_NAME + "\nError: " + exitError)
+                                }
+                            }
+                    }
+                }
+            } 
+     
+     
+     
+            stage('Upload log file')     
+            {    
+               steps {
+                   script{
+                       def start = new Date()
+					   
+                       pintaFich("Final deploy stage... ", 'Info', outputLogFile)                                                    
+                 
+                    try {
+
+                        salvarLog (outputLogFile, USERMAIL, USERNAME, USERPASSWRD, GIT_SOURCE, GITLAB_BRANCH_SOURCE, GITLAB_CREDENTIAL_SOURCE, GITLAB_URL_SOURCE, jsonIdPipeUno )
+						
+                        StageResult = 'SUCCESS'
+                        BuildResult = 'SUCCESS'
+                        }
+					//*/	
+                    catch(Exception ex) {
+                        echo "Error en Upload log file --> ${ex}"
+                        pintaFich("Error Uploading log file,  Error: ${ex}", 'Error',outputLogFile)
+                        //salvarLog (outputLogFile, USERMAIL, USERNAME, USERPASSWRD, GIT_SOURCE)
+						salvarLog (outputLogFile, USERMAIL, USERNAME, USERPASSWRD, GIT_SOURCE, GITLAB_URL_SOURCE_JSON, GITLAB_CREDENTIAL_SOURCE, GITLAB_URL_SOURCE, jsonIdPipeUno )
+                        StageResult = 'FAILURE'        
+                        //BuildResult = 'FAILURE'                        
+                        exitError = ex
+                    }
+					
+					finally {
+                        influxDbPublisher( selectedTarget: 'middleware-influxdb')
+                        WriteInflux(start, STAGEINFO+env.STAGE_NAME, StageResult, BuildResult, plusInfluxTAGS, plusInfluxFIELDS, jsonIdPipeUno )
+                        if(StageResult == 'FAILURE')
+                        {
+                           error("Error at " + env.STAGE_NAME + "\nError: " + exitError)
+                        }
+                    }
+
+                   }
+                   
+               }
+            }
+
+     
+///////////stages     
+    }
+        post {
+            always {
+                step([$class: 'Mailer', notifyEveryUnstableBuild: true, recipients: "business_process_integration_mad@dxc.com",  sendToIndividuals: true])
+				//step([$class: 'Mailer', notifyEveryUnstableBuild: true, recipients: "marc.mir.estrader@dxc.com",  sendToIndividuals: true])
+                ///
+                echo "Se supone que esto se ejecuta tanto si va bien como si no -....."
+                echo "Var de entrada jsonApp -.${jsonApp}...."
+                echo "Var de entrada jsonModules -.${jsonModules}...."    
+                echo '=============================================='
+                script{
+                     echo "Var de entrada en el SCRIPT jsonApp ${jsonApp}...."
+                     echo "Var de entrada jsonModules -.${jsonModules}...."    
+                     def modulos=''
+                     for (pac in jsonModules)
+                     {
+                        modulos=modulos+', '+pac.name.toString()
+                     }    
+                     
+                     sh 'echo "<html>" >> myfile.html'
+
+sh 'echo " <h1 style=\"color: \\#4485b8\\;\">Deploy status result.</h1>             ">> myfile.html'
+sh 'echo " <p>&nbsp;</p>                                                            ">> myfile.html'
+sh 'echo " <h4>Detail info deploy</h4>                                               ">> myfile.html'
+sh 'echo " <table class=\"editorDemoTable\" style=\"vertical-align:top\">               ">> myfile.html'
+sh 'echo " <thead>                                                                   ">> myfile.html'
+sh 'echo " <tr>                                                                      ">> myfile.html'
+sh 'echo " <td><b><i>Item </b></i></td>                                              ">> myfile.html'
+sh 'echo " <td><b><i>Value </b></i></td>                                             ">> myfile.html'
+sh 'echo " </tr>                                                                    ">> myfile.html'
+sh 'echo " </thead>                                                                   ">> myfile.html'
+sh 'echo " <tbody>                                                                   ">> myfile.html'
+sh 'echo " <tr>                                                                       ">> myfile.html'
+sh 'echo " <td >For the Application</td>                                            ">> myfile.html'
+sh 'echo " <td> : <strong> "' + jsonApp +'"</strong></td>                                        ">> myfile.html'
+sh 'echo " </tr>                                                                    ">> myfile.html'
+sh 'echo " <tr>                                                                       ">> myfile.html'
+sh 'echo "   <td >Environment </td>                                                   ">> myfile.html'
+sh 'echo " <td> : <strong> "' + jsonEnv +'" </strong></td>                                        ">> myfile.html'
+sh 'echo " </tr><tr>                                                                ">> myfile.html'
+sh 'echo "   <td >Version Tag </td>                                                   ">> myfile.html'
+sh 'echo " <td> : <strong> "' + jsonTag + '" </strong></td>                     ">> myfile.html'
+sh 'echo " </tr><tr>                                                                ">> myfile.html'
+sh 'echo "   <td >Deployed modules  </td>                                           ">> myfile.html'
+sh 'echo " <td> : <strong> "'+ modulos +'" </strong></td>                       ">> myfile.html'
+sh 'echo " </tr><tr>                                                                ">> myfile.html'
+sh 'echo "   <td >Deployed date time  </td>                                           ">> myfile.html'
+sh 'echo " <td> : <strong> "' + date_from + '" </strong></td>                                ">> myfile.html'            
+sh 'echo " </tr><tr>                                                                ">> myfile.html'
+sh 'echo "   <td >SM Change  </td>                                                   ">> myfile.html'
+sh 'echo " <td> : <strong> "' + ServNowID + '" </strong></td>                                 ">> myfile.html'                
+sh 'echo " </tr>  <tr>                                                               ">> myfile.html'
+sh 'echo "   <td >Result   </td>                                               ">> myfile.html'
+//if ( deployStatus == 'SUCCESS')
+if ( BuildResult == 'SUCCESS')    
+ { 
+    sh 'echo " <td> <h2 style=\"color: \\#00FF00\\;\"> --> "' + BuildResult + '" </h2></td> ">> myfile.html'
+ }else
+ {
+    sh 'echo " <td> <h2 style=\"color: \\#FF0000\\;\"> --> "' + BuildResult + '" </h2></td> ">> myfile.html'
+ }    
+sh 'echo " </tr>                                                                    ">> myfile.html'
+sh 'echo "   </tbody>                                                                ">> myfile.html'
+sh 'echo " </table>                                                                    ">> myfile.html'
+sh 'echo " </td>                                                                    ">> myfile.html'
+sh 'echo " <p>&nbsp;</p>                                                            ">> myfile.html'
+sh 'echo " <td>                                                                        ">> myfile.html'
+sh 'echo " </tr>                                                                    ">> myfile.html'
+sh 'echo " <tr>                                                                        ">> myfile.html'
+sh 'echo " </tr>                                                                    ">> myfile.html'
+sh 'echo " </tbody>                                                                    ">> myfile.html'
+sh 'echo " </table>                                                                    ">> myfile.html'
+sh 'echo " <hr />                                                                    ">> myfile.html'
+sh 'echo " <p><em>Please do not answare this mail. If you need, contact with Automation team for detail </em></p>                    ">> myfile.html'
+sh 'echo " <p><em> business_process_integration_mad@dxc.com</em></p>                ">> myfile.html'        
+sh 'echo " <hr />                                                                    ">> myfile.html'
+
+                    
+                    sh 'ls -al myfile.html'
+                    sh 'cat myfile.html'
+                  //emailext mimeType: 'text/html',from: 'Automation_cdci@fcc.com', body: '${FILE, path="myfile.html"}', recipientProviders: [[$class: 'DevelopersRecipientProvider'], [$class: 'RequesterRecipientProvider']], subject: '[FCC] CDCI Deployment status', to: misDestMail
+                def myTo =''
+                for (elem in misDestMail)
+                {
+                    myTo=myTo+', '+elem
+                }  
+                echo "los destinatarios son: ${myTo}"
+                emailext mimeType: 'text/html',from: 'Automation_cdci@fcc.com', body: '${FILE, path="myfile.html"}', subject: '[FCC] MULE Deployment status', to: myTo
+                }        
+                
+                ///
+            }
+        }        
+    
+     }                
